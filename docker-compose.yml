@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_DB: widget_platform, POSTGRES_USER: widget, POSTGRES_PASSWORD: widget }
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U widget -d widget_platform"], interval: 5s, timeout: 3s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
+  api:
+    build: .
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+  worker:
+    build: .
+    env_file: .env
+    command: rq worker --url ${REDIS_URL:-redis://redis:6379/0} submissions
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+  customer-site:
+    image: nginx:alpine
+    ports: ["8081:80"]
+    volumes: ["./demo-site:/usr/share/nginx/html:ro"]

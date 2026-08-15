@@ -1,0 +1,33 @@
+[project]
+name = "flyrank-capstone-widget-platform"
+version = "0.1.0"
+description = "Embeddable, tenant-isolated lead capture widgets."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "sqlalchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4", "pydantic-settings>=2.6,<3", "PyJWT>=2.9,<3",
+  "bcrypt>=4.2,<5", "redis>=5.1,<6", "rq>=2.0,<3", "httpx>=0.27,<1",
+  "jinja2>=3.1,<4", "email-validator>=2.2,<3"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008", "E501"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[dependency-groups]
+dev = ["pytest>=9.0.3,<10", "pytest-cov>=5,<7", "ruff>=0.8,<1", "mypy>=1.13,<2"]
