@@ -21,4 +21,4 @@ All statements below map to the capstone definition of done and cite a real comm
 | Dashboard analytics | `test_dashboard_reports_time_and_geo_breakdowns` verifies total, time-series, and geographic breakdown responses. |
 | Migrations | `DATABASE_URL=sqlite:////private/tmp/widget-platform-migration.db alembic upgrade head` completed, and `alembic current` reported `0001_initial (head)`. |
 | Automated checks | `pytest -q`: `11 passed`; `ruff check .`: passed; `mypy app scripts migrations`: no issues; `pip-audit`: no known vulnerabilities. |
-| Container smoke test | Not yet run in this environment: Docker/Compose is not installed. The Compose file has API/worker health dependencies and production migration startup, but this remains the only unverified runtime proof. |
+| Container smoke test | GitHub Actions run `32404620783`, job `compose-smoke`, passed: build, `docker compose up --build -d`, migrated API health check, and `docker compose down --volumes` all completed successfully. |
