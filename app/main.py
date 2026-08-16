@@ -1,18 +1,22 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
+from re import match
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.database import Base, engine, get_session
+from app.database import SessionLocal, get_session
 from app.models import Submission, User, Widget
 from app.schemas import Credentials, PublicSubmission, WidgetInput
 from app.security import decode_token, hash_password, issue_token, verify_password
 from app.services import (
     enforce_rate_limit,
     enqueue_post_processing,
+    redis_client,
     submission_for_key,
     validate_widget_fields,
 )
@@ -20,11 +24,49 @@ from app.services import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(engine)
     yield
 
 
 app = FastAPI(title="FlyRank Widget Platform", version="0.1.0", lifespan=lifespan)
+
+
+def allowed_origin_for_request(request: Request) -> str | None:
+    route = match(r"/api/public/widgets/([^/]+)", request.url.path)
+    origin = request.headers.get("origin")
+    if route is None or origin is None:
+        return None
+    with SessionLocal() as session:
+        widget = session.get(Widget, route.group(1))
+        return origin if widget is not None and origin in widget.allowed_origins else None
+
+
+def public_json(request: Request, detail: str | dict, status_code: int) -> JSONResponse:
+    response = JSONResponse({"detail": detail}, status_code=status_code)
+    if origin := allowed_origin_for_request(request):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    return response
+
+
+@app.middleware("http")
+async def limit_public_request_body(request: Request, call_next):
+    if request.method == "POST" and match(
+        r"/api/public/widgets/[^/]+/submissions", request.url.path
+    ):
+        body = await request.body()
+        if len(body) > get_settings().max_public_payload_bytes:
+            return public_json(request, "Payload exceeds the configured size limit", 413)
+    return await call_next(request)
+
+
+@app.exception_handler(HTTPException)
+async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
+    return public_json(request, exc.detail, exc.status_code)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, _: RequestValidationError) -> JSONResponse:
+    return public_json(request, "Request validation failed", 422)
 
 
 def current_user(
@@ -157,6 +199,14 @@ def public_widget(widget_id: str, origin: str | None, session: Session) -> Widge
     return widget
 
 
+def request_ip_address(request: Request) -> str:
+    if get_settings().trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",", maxsplit=1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def cors_response(data: dict, origin: str, status_code: int = 200) -> JSONResponse:
     response = JSONResponse(data, status_code=status_code)
     response.headers["Access-Control-Allow-Origin"] = origin
@@ -222,22 +272,20 @@ def create_submission(
     error = validate_widget_fields(widget, payload.fields)
     if error:
         raise HTTPException(status_code=422, detail=error)
-    ip_address = request.client.host if request.client else "unknown"
+    ip_address = request_ip_address(request)
     try:
-        from redis import Redis
-
-        redis_client = Redis.from_url(get_settings().redis_url)
         if not enforce_rate_limit(
-            redis_client, f"ip:{ip_address}", get_settings().rate_limit_ip_per_minute
+            redis_client(), f"ip:{ip_address}", get_settings().rate_limit_ip_per_minute
         ) or not enforce_rate_limit(
-            redis_client, f"widget:{widget.id}", get_settings().rate_limit_widget_per_minute
+            redis_client(), f"widget:{widget.id}", get_settings().rate_limit_widget_per_minute
         ):
             raise HTTPException(status_code=429, detail="Too many submissions; try again shortly")
     except HTTPException:
         raise
     except Exception:
-        # Redis outages should be visible operationally but must not turn a valid lead into a 500.
-        pass
+        raise HTTPException(
+            status_code=503, detail="Rate limiter is temporarily unavailable"
+        ) from None
     existing = submission_for_key(session, widget.id, idempotency_key)
     if existing:
         return cors_response(
@@ -252,7 +300,7 @@ def create_submission(
     )
     session.add(submission)
     session.commit()
-    enqueue_post_processing(submission.id)
+    enqueue_post_processing(session, submission.id)
     return cors_response({"id": submission.id, "status": "accepted"}, origin or "", status_code=201)
 
 
@@ -282,17 +330,33 @@ def dashboard_submissions(
 def dashboard_analytics(
     user: User = Depends(current_user), session: Session = Depends(get_session)
 ) -> dict:
-    count = session.scalar(
-        select(func.count()).select_from(Submission).where(Submission.tenant_id == user.tenant_id)
-    )
+    rows = session.scalars(select(Submission).where(Submission.tenant_id == user.tenant_id)).all()
+    count = len(rows)
     per_widget = session.execute(
         select(Submission.widget_id, func.count())
         .where(Submission.tenant_id == user.tenant_id)
         .group_by(Submission.widget_id)
     ).all()
+    over_time: dict[str, int] = {}
+    geo_breakdown: dict[str, int] = {}
+    for row in rows:
+        if row.created_at:
+            day = row.created_at.date().isoformat()
+            over_time[day] = over_time.get(day, 0) + 1
+        country = (row.geo or {}).get("country") or "Unknown"
+        geo_breakdown[country] = geo_breakdown.get(country, 0) + 1
     return {
         "total_submissions": count or 0,
         "per_widget": [{"widget_id": item[0], "count": item[1]} for item in per_widget],
+        "submissions_over_time": [
+            {"date": day, "count": value} for day, value in sorted(over_time.items())
+        ],
+        "geo_breakdown": [
+            {"country": country, "count": value}
+            for country, value in sorted(
+                geo_breakdown.items(), key=lambda item: (-item[1], item[0])
+            )
+        ],
     }
 
 
@@ -313,7 +377,7 @@ def dashboard_page(
 
 @app.get("/assets/widget.v1.js", response_class=PlainTextResponse)
 def widget_bundle() -> PlainTextResponse:
-    source = """(() => { const script=document.currentScript; const id=script?.dataset.widgetId; if(!id)return; const base=new URL(script.src).origin; fetch(`${base}/api/public/widgets/${id}/config`).then(r=>r.json()).then(config=>{const root=document.createElement('form'); root.innerHTML=`<h2>${config.title}</h2><p>${config.description||''}</p>`+config.fields.map(f=>`<label>${f.label||f.name}<input name="${f.name}" type="${f.type||'text'}" ${f.required?'required':''}></label>`).join('')+'<input name="website" tabindex="-1" autocomplete="off" style="display:none"><button>'+config.button_text+'</button>'; root.addEventListener('submit',e=>{e.preventDefault();const fields=Object.fromEntries(new FormData(root));const honeypot=fields.website||'';delete fields.website;fetch(`${base}/api/public/widgets/${id}/submissions`,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({fields,honeypot})}).then(r=>r.ok?(root.innerHTML='<p>Thanks - we received your submission.</p>'):Promise.reject(r));}); script.insertAdjacentElement('afterend',root);}).catch(()=>{});})();"""
+    source = (Path(__file__).parent / "assets" / "widget.v1.js").read_text()
     return PlainTextResponse(
         source,
         media_type="application/javascript",

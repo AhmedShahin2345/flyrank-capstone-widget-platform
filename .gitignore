@@ -7,5 +7,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 *.db
+demo-site/demo-config.js
+.playwright-cli/
 coverage.xml
 htmlcov/

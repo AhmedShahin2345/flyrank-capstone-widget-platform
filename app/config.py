@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     notification_mode: str = "log"
     rate_limit_ip_per_minute: int = 10
     rate_limit_widget_per_minute: int = 30
+    max_public_payload_bytes: int = 16_384
+    trust_proxy_headers: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
