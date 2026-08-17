@@ -8,6 +8,7 @@ from rq import Queue, Retry
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.alerts import send_failure_alert
 from app.config import get_settings
 from app.models import PostProcessingJob, Submission, Widget
 
@@ -75,6 +76,11 @@ def enqueue_post_processing(session: Session, submission_id: str) -> bool:
         job.last_error = "Queue unavailable; dispatcher will retry"
         session.commit()
         logger.exception("Queue unavailable", extra={"submission_id": submission_id, "alert": True})
+        send_failure_alert(
+            "post_processing_queue_unavailable",
+            submission_id,
+            "Redis/RQ queue could not accept the post-processing job.",
+        )
         return False
 
 

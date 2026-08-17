@@ -21,3 +21,14 @@ services:
     image: nginx:alpine
     ports: ["8081:80"]
     volumes: ["./demo-site:/usr/share/nginx/html:ro"]
+  acceptance-verifier:
+    build: .
+    env_file: .env
+    environment:
+      API_BASE: http://api:8000
+      WIDGET_ORIGIN: http://customer-site
+      ACCEPTANCE_STATE_PATH: /verification/rate-limit.json
+    volumes: ["./.acceptance:/verification"]
+    entrypoint: ["python", "scripts/verify_acceptance.py"]
+    depends_on: { api: { condition: service_healthy }, redis: { condition: service_healthy } }
+    profiles: ["verification"]

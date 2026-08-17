@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     geo_provider_a_url: str = "https://ip-api.com/json/{ip}"
     geo_provider_b_url: str = "https://ipapi.co/{ip}/json/"
     notification_mode: str = "log"
+    failure_alert_webhook_url: str | None = None
     rate_limit_ip_per_minute: int = 10
     rate_limit_widget_per_minute: int = 30
     max_public_payload_bytes: int = 16_384
