@@ -43,6 +43,15 @@ jobs:
       - name: Verify real Redis rate limiting and a separate client's dashboard visibility
         run: |
           mkdir -p .acceptance
-          docker compose --profile verification run --rm acceptance-verifier burst
-          docker compose --profile verification run --rm acceptance-verifier independent
+          docker compose --profile verification run -d --no-deps --name rate-limit-burst \
+            -e HOLD_AFTER_BURST_SECONDS=30 acceptance-verifier burst
+          for attempt in $(seq 1 30); do
+            test -f .acceptance/rate-limit.json && break
+            sleep 1
+          done
+          test -f .acceptance/rate-limit.json
+          docker compose --profile verification run --rm --no-deps acceptance-verifier independent
+          docker logs rate-limit-burst
+          test "$(docker wait rate-limit-burst)" = "0"
+          docker rm rate-limit-burst
       - run: docker compose down --volumes
