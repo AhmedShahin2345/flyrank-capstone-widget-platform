@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cp .env.example .env
       - name: Run the documented Compose startup command
         run: docker compose up --build --wait
       - name: Run the documented Compose seed command
