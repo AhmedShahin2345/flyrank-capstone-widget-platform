@@ -13,15 +13,17 @@ Visitor -> public submission API -> validation/rate limit -> PostgreSQL -> Redis
 
 The bundle is versioned and immutable; widget config has a five-minute cache. Public endpoints verify the `Origin` against the widget's allowlist and respond to preflight requests.
 
+The short [Phase 1 design](DESIGN.md) records the model, API boundary, layering, and explicit non-goal behind this implementation.
+
 ## Run locally
 
 ```sh
 cp .env.example .env
-docker compose up --build
-python scripts/seed_demo.py
+docker compose up --build --wait
+docker compose --profile seed run --rm --no-deps demo-seed
 ```
 
-The API is at `http://localhost:8000`; the separate-origin demo site is at `http://localhost:8081`. The seed script prints usable demo credentials, an API token, and an embed snippet, then writes the local-only widget ID into `demo-site/demo-config.js`.
+The API is at `http://localhost:8000`; the separate-origin demo site is at `http://localhost:8081`. The seed command runs inside the Compose network, so it can reach PostgreSQL using the same `DATABASE_URL` as the API. It prints usable demo credentials, an API token, and an embed snippet, then writes the local-only widget ID into `demo-site/demo-config.js` through the mounted directory.
 
 ## Useful commands
 
