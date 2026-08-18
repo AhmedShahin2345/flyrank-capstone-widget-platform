@@ -24,6 +24,7 @@ services:
   demo-seed:
     build: .
     env_file: .env
+    environment: { PYTHONPATH: /app }
     volumes: ["./demo-site:/app/demo-site"]
     command: ["python", "scripts/seed_demo.py"]
     depends_on: { api: { condition: service_healthy } }
