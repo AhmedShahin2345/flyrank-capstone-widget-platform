@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -299,7 +300,16 @@ def create_submission(
         ip_address=ip_address,
     )
     session.add(submission)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        existing = submission_for_key(session, widget.id, idempotency_key)
+        if existing is None:
+            raise
+        return cors_response(
+            {"id": existing.id, "status": "accepted", "idempotent_replay": True}, origin or ""
+        )
     enqueue_post_processing(session, submission.id)
     return cors_response({"id": submission.id, "status": "accepted"}, origin or "", status_code=201)
 
