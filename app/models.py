@@ -64,3 +64,18 @@ class Submission(Base):
         DateTime(timezone=True), server_default=func.now(), index=True
     )
     widget: Mapped[Widget] = relationship(back_populates="submissions")
+
+
+class PostProcessingJob(Base):
+    __tablename__ = "post_processing_jobs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    submission_id: Mapped[str] = mapped_column(
+        ForeignKey("submissions.id"), unique=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

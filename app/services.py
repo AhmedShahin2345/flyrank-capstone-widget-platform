@@ -4,12 +4,12 @@ from typing import cast
 
 import httpx
 from redis import Redis
-from rq import Queue
+from rq import Queue, Retry
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Submission, Widget
+from app.models import PostProcessingJob, Submission, Widget
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +47,35 @@ def validate_widget_fields(widget: Widget, values: dict[str, str]) -> str | None
     return "Unexpected field submitted" if unexpected else None
 
 
-def enqueue_post_processing(submission_id: str) -> None:
+def redis_client() -> Redis:
+    return Redis.from_url(get_settings().redis_url)
+
+
+def enqueue_post_processing(session: Session, submission_id: str) -> bool:
+    job = session.scalar(
+        select(PostProcessingJob).where(PostProcessingJob.submission_id == submission_id)
+    )
+    if job is None:
+        job = PostProcessingJob(submission_id=submission_id)
+        session.add(job)
+        session.commit()
     try:
-        queue = Queue("submissions", connection=Redis.from_url(get_settings().redis_url))
-        queue.enqueue("app.worker.process_submission", submission_id, retry=3, job_timeout=30)
-    except Exception:
-        logger.exception(
-            "Could not enqueue submission post-processing", extra={"submission_id": submission_id}
+        queue = Queue("submissions", connection=redis_client())
+        queue.enqueue(
+            "app.worker.process_submission",
+            submission_id,
+            retry=Retry(max=3, interval=[10, 60, 300]),
+            job_timeout=30,
         )
+        job.status = "queued"
+        session.commit()
+        return True
+    except Exception:
+        job.status = "pending"
+        job.last_error = "Queue unavailable; dispatcher will retry"
+        session.commit()
+        logger.exception("Queue unavailable", extra={"submission_id": submission_id, "alert": True})
+        return False
 
 
 def lookup_geo(ip_address: str) -> dict | None:
