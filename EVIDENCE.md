@@ -56,6 +56,24 @@ No known vulnerabilities found
 
 `pip-audit` reports the local project package as skipped because it is not published to PyPI; audited third-party dependencies had no known vulnerabilities.
 
+## Design and clean-machine setup
+
+[`compose-smoke` run 32411112664](https://github.com/AhmedShahin2345/flyrank-capstone-widget-platform/actions/runs/32411112664) ran the commands published in `capstone.yaml` and `README.md` against fresh Compose services:
+
+```text
+$ docker compose up --build --wait
+Container flyrank-capstone-widget-platform-api-1 Healthy
+
+$ docker compose --profile seed run --rm --no-deps demo-seed
+Demo login: demo@widget.local / demo-password-2026
+Embed snippet:
+<script src="http://localhost:8000/assets/widget.v1.js" data-widget-id="7992cb32-4d3d-482d-bcb5-911a5b03b257" defer></script>
+
+$ test -s demo-site/demo-config.js
+```
+
+`DESIGN.md` is the corresponding Phase 1 artifact: it states the problem, model, API surface, layer boundary, and a deliberate non-goal.
+
 ## Compose acceptance
 
 The CI workflow runs these commands against its actual PostgreSQL and Redis containers:
