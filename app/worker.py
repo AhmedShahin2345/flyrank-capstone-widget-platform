@@ -33,7 +33,7 @@ def process_submission(submission_id: str) -> None:
         except Exception:
             attempts = job.attempts if job is not None else MAX_POST_PROCESSING_ATTEMPTS
             retryable = attempts < MAX_POST_PROCESSING_ATTEMPTS
-            submission.notification_status = "retrying" if retryable else "failed"
+            submission.notification_status = "failed"
             if job is not None:
                 job.status = "pending" if retryable else "failed"
                 job.last_error = "Notification delivery failed"
@@ -44,9 +44,6 @@ def process_submission(submission_id: str) -> None:
             send_failure_alert(
                 "notification_delivery_failed",
                 submission.id,
-                (
-                    "The lead was stored, but its confirmation notification could not be delivered. "
-                    + ("A retry is scheduled." if retryable else "The retry budget is exhausted.")
-                ),
+                "The lead was stored, but its confirmation notification could not be delivered.",
             )
         session.commit()
