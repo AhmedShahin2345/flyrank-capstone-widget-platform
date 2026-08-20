@@ -18,12 +18,11 @@ The short [Phase 1 design](DESIGN.md) records the model, API boundary, layering,
 ## Run locally
 
 ```sh
-cp .env.example .env
 docker compose up --build --wait
 docker compose --profile seed run --rm --no-deps demo-seed
 ```
 
-The API is at `http://localhost:8000`; the separate-origin demo site is at `http://localhost:8081`. The seed command runs inside the Compose network, so it can reach PostgreSQL using the same `DATABASE_URL` as the API. It prints usable demo credentials, an API token, and an embed snippet, then writes the local-only widget ID into `demo-site/demo-config.js` through the mounted directory.
+The API is at `http://localhost:8000`; the separate-origin demo site is at `http://localhost:8081`. Compose loads safe defaults from `.env.example`; copy it to `.env` only when you need local overrides. The seed command runs inside the Compose network, so it can reach PostgreSQL using the same `DATABASE_URL` as the API. It prints usable demo credentials, an API token, and an embed snippet, then writes the local-only widget ID into `demo-site/demo-config.js` through the mounted directory.
 
 ## Useful commands
 
