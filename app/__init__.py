@@ -1,0 +1,1 @@
+"""Widget platform application package."""
