@@ -31,15 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cp .env.example .env
-      - run: docker compose up --build -d
-      - name: Wait for migrated API health check
+      - name: Run the documented Compose startup command
+        run: docker compose up --build --wait
+      - name: Run the documented Compose seed command
         run: |
-          for attempt in $(seq 1 30); do
-            curl --fail --silent http://localhost:8000/health && exit 0
-            sleep 2
-          done
-          docker compose logs
-          exit 1
+          docker compose --profile seed run --rm --no-deps demo-seed
+          test -s demo-site/demo-config.js
       - name: Verify real Redis rate limiting and a separate client's dashboard visibility
         run: |
           mkdir -p .acceptance

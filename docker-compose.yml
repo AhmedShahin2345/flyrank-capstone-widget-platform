@@ -21,6 +21,13 @@ services:
     image: nginx:alpine
     ports: ["8081:80"]
     volumes: ["./demo-site:/usr/share/nginx/html:ro"]
+  demo-seed:
+    build: .
+    env_file: .env
+    volumes: ["./demo-site:/app/demo-site"]
+    command: ["python", "scripts/seed_demo.py"]
+    depends_on: { api: { condition: service_healthy } }
+    profiles: ["seed"]
   acceptance-verifier:
     build: .
     env_file: .env
