@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
-from app import main, services, worker
+from app import alerts, main, services, worker
 from app.database import Base, SessionLocal, engine
 from app.models import PostProcessingJob, Submission, User, Widget
 
@@ -63,11 +63,34 @@ def test_owner_crud_is_tenant_isolated() -> None:
         assert denied.status_code == 404
 
 
+def test_widget_management_requires_authentication() -> None:
+    payload = {
+        "name": "Private widget",
+        "widget_type": "signup",
+        "title": "Private",
+        "button_text": "Submit",
+        "fields": [{"name": "email", "label": "Email", "type": "email", "required": True}],
+        "allowed_origins": [ORIGIN],
+    }
+    with TestClient(main.app) as client:
+        assert client.get("/api/widgets").status_code == 401
+        assert client.post("/api/widgets", json=payload).status_code == 401
+        assert client.get("/api/widgets/not-a-widget").status_code == 401
+        assert client.put("/api/widgets/not-a-widget", json=payload).status_code == 401
+        assert client.delete("/api/widgets/not-a-widget").status_code == 401
+
+
 def test_embed_assets_are_cacheable_and_config_is_cors_scoped() -> None:
     with TestClient(main.app) as client:
-        widget = create_widget(client, register(client))
+        token = register(client)
+        widget = create_widget(client, token)
         bundle = client.get("/assets/widget.v1.js")
         assert bundle.headers["cache-control"] == "public, max-age=31536000, immutable"
+        snippet = client.get(
+            f"/api/widgets/{widget['id']}/embed", headers={"Authorization": f"Bearer {token}"}
+        ).json()["snippet"]
+        assert f'data-widget-id="{widget["id"]}"' in snippet
+        assert "/assets/widget.v1.js" in snippet
         config = client.get(
             f"/api/public/widgets/{widget['id']}/config", headers={"Origin": ORIGIN}
         )
@@ -107,6 +130,8 @@ def test_preflight_validation_honeypot_and_idempotency(monkeypatch) -> None:
             json={"fields": {"email": "a@example.com"}, "honeypot": "bot"},
         )
         assert spam.status_code == 200
+        with SessionLocal() as session:
+            assert session.scalar(select(func.count()).select_from(Submission)) == 0
         headers = {"Origin": ORIGIN, "Idempotency-Key": "repeatable-key"}
         first = client.post(endpoint, headers=headers, json={"fields": {"email": "a@example.com"}})
         replay = client.post(endpoint, headers=headers, json={"fields": {"email": "a@example.com"}})
@@ -259,6 +284,8 @@ def test_worker_keeps_submission_when_notification_fails(monkeypatch) -> None:
     monkeypatch.setattr(
         worker, "deliver_notification", lambda _: (_ for _ in ()).throw(RuntimeError("smtp down"))
     )
+    alerted: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(worker, "send_failure_alert", lambda *args: alerted.append(args) or True)
     worker.process_submission(submission_id)
 
     with SessionLocal() as session:
@@ -266,6 +293,40 @@ def test_worker_keeps_submission_when_notification_fails(monkeypatch) -> None:
         assert saved is not None
         assert saved.geo == {"country": "Egypt", "city": "Cairo"}
         assert saved.notification_status == "failed"
+    assert alerted == [
+        (
+            "notification_delivery_failed",
+            submission_id,
+            "The lead was stored, but its confirmation notification could not be delivered.",
+        )
+    ]
+
+
+def test_failure_alert_posts_actionable_payload(monkeypatch) -> None:
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+    posted: dict[str, object] = {}
+
+    def fake_post(url: str, **kwargs: object) -> Response:
+        posted["url"] = url
+        posted.update(kwargs)
+        return Response()
+
+    monkeypatch.setattr(alerts.httpx, "post", fake_post)
+    settings = alerts.get_settings()
+    monkeypatch.setattr(settings, "failure_alert_webhook_url", "https://alerts.example/hook")
+    assert alerts.send_failure_alert("notification_delivery_failed", "submission-123", "smtp down")
+    assert posted == {
+        "url": "https://alerts.example/hook",
+        "json": {
+            "event": "notification_delivery_failed",
+            "submission_id": "submission-123",
+            "detail": "smtp down",
+        },
+        "timeout": 2.0,
+    }
 
 
 def test_queue_outage_persists_a_retryable_outbox_job(monkeypatch) -> None:
@@ -294,7 +355,19 @@ def test_queue_outage_persists_a_retryable_outbox_job(monkeypatch) -> None:
                 raise ConnectionError("redis unavailable")
 
         monkeypatch.setattr(services, "Queue", BrokenQueue)
+        alerted: list[tuple[str, str, str]] = []
+        monkeypatch.setattr(
+            services, "send_failure_alert", lambda *args: alerted.append(args) or True
+        )
         assert services.enqueue_post_processing(session, submission_id) is False
+
+    assert alerted == [
+        (
+            "post_processing_queue_unavailable",
+            submission_id,
+            "Redis/RQ queue could not accept the post-processing job.",
+        )
+    ]
 
     with SessionLocal() as session:
         job = session.scalar(

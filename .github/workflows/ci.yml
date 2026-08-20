@@ -16,6 +16,16 @@ jobs:
       - run: pytest -q
       - run: pip install pip-audit && pip-audit
 
+  browser-rendering:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: RUN_BROWSER_TESTS=1 pytest -q tests/test_widget_rendering.py
+
   compose-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -30,4 +40,9 @@ jobs:
           done
           docker compose logs
           exit 1
+      - name: Verify real Redis rate limiting and a separate client's dashboard visibility
+        run: |
+          mkdir -p .acceptance
+          docker compose --profile verification run --rm acceptance-verifier burst
+          docker compose --profile verification run --rm acceptance-verifier independent
       - run: docker compose down --volumes

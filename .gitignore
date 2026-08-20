@@ -9,5 +9,6 @@ __pycache__/
 *.db
 demo-site/demo-config.js
 .playwright-cli/
+.acceptance/
 coverage.xml
 htmlcov/

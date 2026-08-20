@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy import select
 
+from app.alerts import send_failure_alert
 from app.database import SessionLocal
 from app.models import PostProcessingJob, Submission
 from app.services import deliver_notification, lookup_geo
@@ -34,4 +35,9 @@ def process_submission(submission_id: str) -> None:
                 job.status = "failed"
                 job.last_error = "Notification delivery failed"
             logger.exception("Notification failed", extra={"submission_id": submission.id})
+            send_failure_alert(
+                "notification_delivery_failed",
+                submission.id,
+                "The lead was stored, but its confirmation notification could not be delivered.",
+            )
         session.commit()

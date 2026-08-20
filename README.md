@@ -28,6 +28,8 @@ The API is at `http://localhost:8000`; the separate-origin demo site is at `http
 ```sh
 python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
+.venv/bin/python -m playwright install chromium
+RUN_BROWSER_TESTS=1 .venv/bin/pytest -q tests/test_widget_rendering.py
 .venv/bin/ruff format . && .venv/bin/ruff check .
 .venv/bin/mypy app
 .venv/bin/alembic upgrade head
@@ -43,8 +45,12 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 Each capture request needs an `Idempotency-Key`. A hidden `website` honeypot is rejected without creating a submission. Public request bodies are capped at 16 KiB and malformed/oversized requests return CORS-readable JSON errors. The Redis limiter protects both IP and widget buckets; when Redis is unavailable the API returns `503` rather than accepting unprotected traffic. Geo lookup tries provider A, then B; a full failure leaves the stored lead unchanged. After persistence, an outbox record is queued for RQ processing. If Redis is down, the outbox dispatcher retries later and retains an actionable failure record.
 
+## Operational alerts
+
+The request path never depends on notification, queue, or alert delivery. When RQ is unavailable or a notification job fails, the durable outbox/submission record is retained and the worker sends a compact failure payload to `FAILURE_ALERT_WEBHOOK_URL` when configured. The webhook receives `event`, `submission_id`, and `detail`; a webhook failure is logged and cannot interrupt persistence or retry handling.
+
 ## Limitations
 
 - Owner dashboard HTML is deliberately minimal; detailed data is available via the authenticated JSON APIs.
-- The notification adapter logs by default. Configure a production provider behind `deliver_notification` rather than placing email calls in the request handler.
+- The notification adapter logs by default. Configure a production provider behind `deliver_notification` rather than placing email calls in the request handler. Configure `FAILURE_ALERT_WEBHOOK_URL` to receive operational failure alerts.
 - Schema changes are managed with Alembic. Containers run `alembic upgrade head` before the API accepts traffic; use the same command for non-container deployment.
