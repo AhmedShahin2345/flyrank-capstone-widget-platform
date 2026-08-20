@@ -9,4 +9,13 @@
 - Added a Playwright-based browser rendering test, webhook-backed best-effort failure alerts, and a Compose acceptance verifier for real Redis rate limiting. AI assistance was used to draft and review these changes; commands and results recorded in `EVIDENCE.md` are from actual runs.
 - Corrected the submission pack after audit: added the Phase 1 design artifact and moved demo seeding into Compose so the documented command works against the same PostgreSQL network as the API.
 
+## 2026-08-31
+
+- Performed a requirement-by-requirement hardening audit without rewriting repository history.
+- Added the missing tenant and time-series database indexes through a forward Alembic migration rather than editing the initial migration.
+- Hardened idempotency so a database uniqueness race becomes a normal idempotent replay instead of a server error.
+- Made notification retry behavior explicit and bounded: failed post-processing jobs return to a durable pending state until the retry budget is exhausted, while an always-running Compose dispatcher re-enqueues pending work.
+- Added regression tests for the uniqueness-race path, retry-budget exhaustion, and migration-created indexes.
+- Updated the operational documentation to match the implemented retry and persistence behavior.
+
 No credentials, provider keys, or SMTP secrets are included in this repository.
