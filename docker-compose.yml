@@ -22,6 +22,11 @@ services:
     env_file: *app-env
     command: rq worker --url ${REDIS_URL:-redis://redis:6379/0} submissions
     depends_on: { api: { condition: service_healthy }, redis: { condition: service_healthy } }
+  outbox-dispatcher:
+    build: .
+    env_file: *app-env
+    command: ["sh", "-c", "while true; do python scripts/dispatch_outbox.py; sleep 10; done"]
+    depends_on: { api: { condition: service_healthy }, redis: { condition: service_healthy } }
   customer-site:
     image: nginx:alpine
     ports: ["8081:80"]
