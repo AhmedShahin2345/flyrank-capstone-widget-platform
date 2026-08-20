@@ -61,8 +61,9 @@ No known vulnerabilities found
 The CI workflow runs these commands against its actual PostgreSQL and Redis containers:
 
 ```text
-docker compose --profile verification run --rm acceptance-verifier burst
-docker compose --profile verification run --rm acceptance-verifier independent
+docker compose --profile verification run -d --no-deps --name rate-limit-burst \
+  -e HOLD_AFTER_BURST_SECONDS=30 acceptance-verifier burst
+docker compose --profile verification run --rm --no-deps acceptance-verifier independent
 ```
 
-`burst` requires ten `201` responses followed by `429` from Redis. `independent` runs in a second Compose container (a different client address), requires `201`, then confirms that submission through the authenticated dashboard API. The exact output and completed run URL are added after the matching remote run passes.
+The burst container remains connected briefly so Docker allocates a different source address to the independent verifier. `burst` requires ten `201` responses followed by `429` from Redis. `independent` requires `201`, then confirms that submission through the authenticated dashboard API. The exact output and completed run URL are added after the matching remote run passes.

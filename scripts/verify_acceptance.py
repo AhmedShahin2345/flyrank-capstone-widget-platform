@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 
@@ -55,6 +56,9 @@ def run_burst() -> None:
     STATE_PATH.write_text(json.dumps({"token": token, "endpoint": endpoint, "unique": unique}))
     print(f"REDIS_BURST_STATUSES={' '.join(map(str, statuses))}")
     print(f"RATE_LIMIT_STATE={STATE_PATH}")
+    hold_seconds = int(os.getenv("HOLD_AFTER_BURST_SECONDS", "0"))
+    if hold_seconds:
+        time.sleep(hold_seconds)
 
 
 def run_independent_client() -> None:
