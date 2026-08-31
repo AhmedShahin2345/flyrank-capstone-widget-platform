@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.models import PostProcessingJob, Submission, Widget
 
 logger = logging.getLogger(__name__)
+MAX_POST_PROCESSING_ATTEMPTS = 3
 
 
 def enforce_rate_limit(redis_client: Redis, key: str, limit: int) -> bool:
@@ -69,6 +70,7 @@ def enqueue_post_processing(session: Session, submission_id: str) -> bool:
             job_timeout=30,
         )
         job.status = "queued"
+        job.last_error = None
         session.commit()
         return True
     except Exception:
