@@ -50,9 +50,7 @@ def register_and_create_widget(client: TestClient) -> tuple[str, dict]:
             "widget_type": "signup",
             "title": "Hardening",
             "button_text": "Send",
-            "fields": [
-                {"name": "email", "label": "Email", "type": "email", "required": True}
-            ],
+            "fields": [{"name": "email", "label": "Email", "type": "email", "required": True}],
             "allowed_origins": [ORIGIN],
         },
     ).json()
